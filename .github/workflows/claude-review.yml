@@ -1,0 +1,56 @@
+# Automatic Claude code review on adam79689's pull requests.
+#
+# Runs on adam79689's Claude Max subscription (CLAUDE_CODE_OAUTH_TOKEN, made
+# with `claude setup-token`), so it is limited to that account's PRs: anyone
+# else's would spend the same subscription's usage limits. Comments post as github-actions[bot] through the
+# built-in GITHUB_TOKEN; the Claude GitHub App is not needed.
+#
+# Reviews once per PR (opened / reopened / ready for review), not on every
+# push. To review again after changes, close and reopen the PR.
+name: Claude review
+
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review]
+
+concurrency:
+  group: claude-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    if: github.event.pull_request.user.login == 'adam79689' && !github.event.pull_request.draft
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+
+            Review this pull request for:
+            - Bugs and incorrect behaviour
+            - Security issues
+            - Changes that do not do what the PR description says
+            - Code quality problems that are worth fixing
+
+            Report only real problems, each with the concrete scenario that goes
+            wrong. No praise and no summary of what the PR does. If you find
+            nothing, post one short comment saying so.
+
+            The PR branch is already checked out in the current working directory.
+            Use `gh pr comment` for top-level feedback.
+            Use `mcp__github_inline_comment__create_inline_comment` (with `confirmed: true`) to highlight specific code issues.
+            Only post GitHub comments - don't submit review text as messages.
+          claude_args: |
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
